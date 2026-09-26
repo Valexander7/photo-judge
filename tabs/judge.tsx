@@ -25,6 +25,8 @@ import {
   createJudgeSession,
   groupIntoMoments,
   judgePhoto,
+  paced,
+  coolerMode,
   loadJudgments,
   modelStatus,
   saveJudgments,
@@ -33,7 +35,7 @@ import type { Judgment, Moment } from "../lib/memory-judge"
 import { compareMoments, mergeSuggestions } from "../lib/scene-judge"
 import { findLookalikes, fingerprint } from "../lib/lookalikes"
 import type { Fingerprint } from "../lib/lookalikes"
-import { addTaste, buildModel, certainty, loadTaste, tasteLean } from "../lib/taste"
+import { addTaste, buildModel, certainty, loadTaste, removeTaste, tasteLean } from "../lib/taste"
 import type { TasteExample } from "../lib/taste"
 import type { RepeatSuggestion } from "../lib/scene-judge"
 import { buildThumbUrl } from "../lib/photo-url"
@@ -69,7 +71,7 @@ function send(message: AppMessage) {
 // After a trash, save the list of trashed photos so the Mac script
 // (~/Developer/photo-cull/sync_deleted.py) can remove the same photos from
 // Apple Photos. Without that, the Apple copies could be backed up again.
-function downloadTrashedList(items: GpdMediaItem[]) {
+function downloadTrashedList(items: GpdMediaItem[], kind: "trashed" | "restored" = "trashed") {
   const list = items.map((i) => ({
     mediaKey: i.mediaKey,
     timestamp: i.timestamp,
@@ -80,7 +82,7 @@ function downloadTrashedList(items: GpdMediaItem[]) {
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", "")
   const a = document.createElement("a")
   a.href = URL.createObjectURL(new Blob([JSON.stringify(list, null, 1)], { type: "application/json" }))
-  a.download = `${stamp.slice(0, 10)} Photo Judge trashed in Google - ${list.length} photos ${stamp.slice(11)}.json`
+  a.download = `${stamp.slice(0, 10)} Photo Judge ${kind} in Google - ${list.length} photos ${stamp.slice(11)}.json`
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
 }
@@ -163,6 +165,7 @@ export default function Judge() {
     try { localStorage.setItem("batchSize", String(n)) } catch { /* not critical */ }
   }
   const [taste, setTaste] = useState<TasteExample[]>([])
+  const [cooler, setCooler] = useState(coolerMode)
   const tasteRef = useRef(taste)
   tasteRef.current = taste
   const reviewedRef = useRef<Array<{ key: string; deleted: boolean }>>([])
@@ -179,6 +182,9 @@ export default function Judge() {
   const [confirm, setConfirm] = useState(false)
   const trashingRef = useRef<GpdMediaItem[]>([])
   const [lastTrashed, setLastTrashed] = useState<GpdMediaItem[]>([])
+  const lastTrashedRef = useRef<GpdMediaItem[]>([])
+  lastTrashedRef.current = lastTrashed
+  const [restoredCount, setRestoredCount] = useState<number | null>(null)
   const [viewing, setViewing] = useState<number | null>(null)
 
   const requestRef = useRef<string | null>(null)
@@ -246,7 +252,7 @@ export default function Judge() {
       for (const item of todo) {
         if (abort.signal.aborted) break
         try {
-          cache[item.mediaKey] = await judgePhoto(session!, item, abort.signal)
+          cache[item.mediaKey] = await paced(() => judgePhoto(session!, item, abort.signal), abort.signal)
         } catch (e) {
           if (abort.signal.aborted) break
           console.warn("[Judge] skipped", item.mediaKey, e)
@@ -266,12 +272,9 @@ export default function Judge() {
     await saveJudgments(cache)
     setJudgments({ ...cache })
     setFlagged(mergeSuggestions(ms, cache, []).flagged)
-    if (abort.signal.aborted) {
-      setComparisonNote("Stopped before scene comparison. Use Compare repeated shots to continue.")
-      setPhase({ name: "review" })
-    } else {
-      await runComparisons(ms, cache, abort)
-    }
+    // The AI scene comparison is the heaviest GPU step, and the look-alike
+    // check now catches most repeats, so it runs only when John asks.
+    setComparisonNote("Look-alikes checked. \"Compare repeated shots\" runs a deeper AI check if you want it (heavier on the GPU).")
     if (!abort.signal.aborted) {
       setPhase({ name: "fingerprinting", done: 0, total: photos.length })
       try {
@@ -280,8 +283,8 @@ export default function Judge() {
       } catch (e) {
         if (!abort.signal.aborted) setError(`Look-alike check failed: ${e instanceof Error ? e.message : e}`)
       }
-      setPhase({ name: "review" })
     }
+    setPhase({ name: "review" })
   }, [runComparisons])
 
   useEffect(() => {
@@ -304,17 +307,29 @@ export default function Judge() {
         }
       } else if (message.action === "gptkResult") {
         const r = message as GptkResultMessage
-        if (r.command === "trashItems") {
+        if (r.command === "restoreItems") {
+          if (r.success) {
+            // Tell the Mac to take these back out of the Apple delete albums,
+            // and forget what this batch taught (FMEA K2).
+            const restored = lastTrashedRef.current
+            downloadTrashedList(restored, "restored")
+            removeTaste(tasteRef.current, new Set(restored.map((i) => i.mediaKey))).then(setTaste)
+            setRestoredCount(restored.length)
+          } else {
+            setError(r.error ?? "Could not restore the photos. Restore them from Google Photos trash.")
+          }
+        } else if (r.command === "trashItems") {
           if (r.success) {
             const count = (r.data as { trashedCount: number }).trashedCount
             setPhase({ name: "trashed", count })
             setLastTrashed(trashingRef.current)
+            setRestoredCount(null)
             downloadTrashedList(trashingRef.current)
             // Learn from this batch, then take the trashed photos off the page.
             const gone = new Set(trashingRef.current.map((i) => i.mediaKey))
             const decisions = reviewedRef.current
               .filter((d) => printsRef.current[d.key])
-              .map((d) => ({ embedding: printsRef.current[d.key].embedding, deleted: d.deleted }))
+              .map((d) => ({ embedding: printsRef.current[d.key].embedding, deleted: d.deleted, key: d.key }))
             addTaste(tasteRef.current, decisions).then(setTaste)
             setMoments((ms) => ms
               .map((m) => ({ ...m, items: m.items.filter((i) => !gone.has(i.mediaKey)) }))
@@ -463,6 +478,13 @@ export default function Judge() {
                     {[20, 50, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                   {taste.length > 0 && ` · learned from ${taste.length} choices`}
+                  {" · "}
+                  <label title="Rest between AI steps so the GPU runs cooler. Slower.">
+                    <input type="checkbox" checked={cooler} onChange={(e) => {
+                      setCooler(e.target.checked)
+                      try { localStorage.setItem("coolerMode", e.target.checked ? "1" : "0") } catch { /* not critical */ }
+                    }} /> run cooler
+                  </label>
                 </Typography>
               </Box>
               {Object.keys(prints).length > 0 && (
@@ -614,6 +636,20 @@ export default function Judge() {
             </Button>
             <br />
             Your choices in this batch were remembered to improve the next ones.
+            <br />
+            {restoredCount === null ? (
+              <Button size="small" color="inherit" onClick={() => send({
+                app: APP_ID, action: "gptkCommand", command: "restoreItems", requestId: newRequestId(),
+                args: { dedupKeys: lastTrashed.map((i) => i.dedupKey) }
+              })}>
+                Undo this batch (restore from Google trash)
+              </Button>
+            ) : (
+              <>Restored {restoredCount} photos in Google Photos. Your Mac takes them back out of the
+                Apple delete album. Reload this page to see them again. If you restore photos
+                straight from Google Photos trash instead, their Apple copies stay in the delete
+                album: take them out there by hand.</>
+            )}
             <Button size="small" variant="contained" sx={{ ml: 1 }} onClick={() => setPhase({ name: "review" })}>
               Next batch
             </Button>

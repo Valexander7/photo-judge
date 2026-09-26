@@ -12,6 +12,7 @@ export interface TasteExample {
   e: string // fingerprint, base64 Float32Array
   v: 1 | -1 // 1 = John deleted it, -1 = John kept it
   t: number // when he decided
+  k?: string // photo it came from, so an undo can take it back
 }
 
 const KEY = "tasteMemory"
@@ -44,17 +45,28 @@ export async function loadTaste(): Promise<TasteExample[]> {
 
 export async function addTaste(
   prev: TasteExample[],
-  decisions: Array<{ embedding: Float32Array; deleted: boolean }>
+  decisions: Array<{ embedding: Float32Array; deleted: boolean; key?: string }>
 ): Promise<TasteExample[]> {
   const now = Date.now()
   const next = [
     ...prev,
-    ...decisions.map((d) => ({ e: encode(d.embedding), v: (d.deleted ? 1 : -1) as 1 | -1, t: now }))
+    ...decisions.map((d) => ({ e: encode(d.embedding), v: (d.deleted ? 1 : -1) as 1 | -1, t: now, k: d.key }))
   ].slice(-MAX_EXAMPLES) // oldest decisions drop off first
   try {
     await chrome.storage.local.set({ [KEY]: next })
   } catch {
     // learning is a bonus; never block a trash on it
+  }
+  return next
+}
+
+/** Forget decisions from an undone batch. */
+export async function removeTaste(prev: TasteExample[], keys: Set<string>): Promise<TasteExample[]> {
+  const next = prev.filter((x) => !x.k || !keys.has(x.k))
+  try {
+    await chrome.storage.local.set({ [KEY]: next })
+  } catch {
+    // not critical
   }
   return next
 }

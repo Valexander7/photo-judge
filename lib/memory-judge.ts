@@ -5,6 +5,30 @@
 import { buildThumbUrl } from "./photo-url"
 import type { GpdMediaItem } from "./types"
 
+/**
+ * "Run cooler" (John, 2026-09-26: GPU at 99% and 81 °C). Chrome decides where
+ * its on-device model runs, and on a Mac that is the GPU; a page can't move it
+ * to the CPU. What a page can do is rest between AI calls: after each call,
+ * wait as long as the call took, so the GPU works about half the time.
+ * On by default; the setting lives in localStorage "coolerMode".
+ */
+export function coolerMode(): boolean {
+  try { return localStorage.getItem("coolerMode") !== "0" } catch { return true }
+}
+
+export async function paced<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const start = performance.now()
+  const result = await work()
+  if (coolerMode()) {
+    const rest = Math.min(5000, performance.now() - start)
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, rest)
+      signal?.addEventListener("abort", () => { clearTimeout(t); resolve() }, { once: true })
+    })
+  }
+  return result
+}
+
 export interface Judgment {
   score: number // 1 (no memory value) .. 5 (treasured moment)
   people: boolean

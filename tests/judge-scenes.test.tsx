@@ -18,7 +18,7 @@ vi.mock("../components/useBlobUrl", () => ({ useBlobUrl: () => ({ blobUrl: undef
 vi.mock("../components/JudgeViewer", () => ({ JudgeViewer: ({ index }: { index: number | null }) => <div data-testid="viewer">{index}</div> }))
 
 afterEach(() => vi.unstubAllGlobals())
-it("runs comparisons after cached ratings, links the keeper, and preserves manual choices on rerun", async () => {
+it("runs comparisons on request after cached ratings, links the keeper, and preserves manual choices on rerun", async () => {
   mocks.compare.mockResolvedValue({ flagged: new Set(["b"]), repeats: { b: { keeper: "a", reason: "Same moment" } }, done: 1, total: 1, failed: 0, stopped: false })
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} })
   vi.stubGlobal("chrome", { runtime: {
@@ -36,6 +36,10 @@ it("runs comparisons after cached ratings, links the keeper, and preserves manua
     mocks.listeners.forEach((fn) => fn({ app: APP_ID, action: "gptkResultChunk", requestId: request.requestId, chunkIndex: 0, totalChunks: 1,
       data: ["a", "b"].map((key, i) => ({ mediaKey: key, dedupKey: key, thumb: "", timestamp: new Date("2026-06-12T12:00:00").getTime() + i * 60000 })) }, {}))
   })
+  // Scene comparison no longer runs by itself (it is the heaviest GPU step).
+  await screen.findByText("This batch: 0 to delete · 0 more waiting")
+  expect(mocks.compare).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole("button", { name: "Compare repeated shots" }))
   await screen.findByText("This batch: 1 to delete · 0 more waiting")
   fireEvent.click(screen.getByRole("button", { name: "View suggested keeper" }))
   expect(screen.getByTestId("viewer")).toHaveTextContent("0")

@@ -1,4 +1,4 @@
-import { createJudgeSession, suggestDeletes } from "./memory-judge"
+import { createJudgeSession, paced, suggestDeletes } from "./memory-judge"
 import type { Judgment, LMSession, Moment } from "./memory-judge"
 import { buildThumbUrl } from "./photo-url"
 import type { GpdMediaItem } from "./types"
@@ -151,7 +151,8 @@ export async function compareMoments(
         }
         if (!decision) {
           session ??= await createJudgeSession(undefined, SCENE_PROMPT)
-          decision = await compareBatch(session, batch, judgments, signal)
+          const s = session
+          decision = await paced(() => compareBatch(s, batch, judgments, signal), signal)
           signal.throwIfAborted()
           cache[key] = decision
           // Comparison results are expendable; a storage error must not erase
