@@ -606,8 +606,9 @@ export default function Judge() {
             Moved {phase.count} photos to Google Photos trash. They can be restored from
             the trash for 60 days.
             <br />
-            A list of these photos was saved to your Downloads folder. Tell Claude
-            "sync Apple" so the same photos get removed from Apple Photos too.
+            A list of these photos was saved to your Downloads folder. Your Mac puts the
+            same photos in Apple Photos' "Deleted in Google" album and notifies you;
+            delete them there.
             <Button size="small" onClick={() => downloadTrashedList(lastTrashed)}>
               Save the list again
             </Button>
