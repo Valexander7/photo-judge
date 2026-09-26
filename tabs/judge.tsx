@@ -14,6 +14,8 @@ import Stack from "@mui/material/Stack"
 import Switch from "@mui/material/Switch"
 import { ThemeProvider } from "@mui/material/styles"
 import TextField from "@mui/material/TextField"
+import ToggleButton from "@mui/material/ToggleButton"
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup"
 import Toolbar from "@mui/material/Toolbar"
 import Typography from "@mui/material/Typography"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -703,8 +705,14 @@ export default function Judge() {
                           }}>
                           <Box
                             onClick={() => setViewing(indexByKey[item.mediaKey])}
-                            sx={{ opacity: isFlagged ? 0.6 : 1 }}>
+                            sx={{ position: "relative", opacity: isFlagged ? 0.6 : 1 }}>
                             <Thumb thumb={item.thumb} />
+                            {isFlagged && (
+                              <Box sx={{
+                                position: "absolute", top: 6, left: 6, px: 0.75, py: 0.25, borderRadius: 1,
+                                bgcolor: "error.main", color: "#fff", fontSize: 11, fontWeight: 700
+                              }}>WILL DELETE</Box>
+                            )}
                           </Box>
                           {learnedKeep.has(item.mediaKey) && !isFlagged && (
                             <Typography variant="caption" display="block" sx={{ p: 0.5, color: "success.main" }}>
@@ -732,18 +740,24 @@ export default function Judge() {
                               </Button>
                             </Box>
                           )}
-                          <Box sx={{ display: "flex", alignItems: "flex-start", gap: 0.5, p: 0.5 }}>
-                            <Typography variant="caption" sx={{ flexGrow: 1 }}>
+                          <Box sx={{ p: 0.5 }}>
+                            <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
                               {j ? `${j.score}/5 · ${j.reason}` : "Not rated"}
                             </Typography>
-                            <Button
-                              size="small"
-                              color={isFlagged ? "error" : "inherit"}
-                              variant={isFlagged ? "contained" : "outlined"}
-                              onClick={() => toggle(item.mediaKey)}
-                              sx={{ minWidth: 0, flexShrink: 0, px: 1, py: 0, fontSize: 11 }}>
-                              {isFlagged ? "Delete" : "Keep"}
-                            </Button>
+                            {/* Two-sided switch: the filled side is the current choice. */}
+                            <ToggleButtonGroup
+                              exclusive fullWidth size="small"
+                              value={isFlagged ? "delete" : "keep"}
+                              onChange={(_, v) => { if (v && (v === "delete") !== isFlagged) toggle(item.mediaKey) }}>
+                              <ToggleButton value="keep" sx={{
+                                py: 0.25, fontSize: 12,
+                                "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "success.main", color: "#fff" }
+                              }}>✓ Keep</ToggleButton>
+                              <ToggleButton value="delete" sx={{
+                                py: 0.25, fontSize: 12,
+                                "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "error.main", color: "#fff" }
+                              }}>✕ Delete</ToggleButton>
+                            </ToggleButtonGroup>
                           </Box>
                         </Box>
                       )

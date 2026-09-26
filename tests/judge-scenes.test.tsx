@@ -43,7 +43,8 @@ it("runs comparisons on request after cached ratings, links the keeper, and pres
   await screen.findByText("This batch: 1 to delete · 0 more waiting")
   fireEvent.click(screen.getByRole("button", { name: "View suggested keeper" }))
   expect(screen.getByTestId("viewer")).toHaveTextContent("0")
-  fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }))
+  // Switch the marked photo back to Keep: the only unpressed "Keep" side.
+  fireEvent.click(screen.getAllByRole("button", { name: /Keep$/, pressed: false })[0])
   await screen.findByText("This batch: 0 to delete · 0 more waiting")
   fireEvent.click(screen.getByRole("button", { name: "Compare repeated shots" }))
   await waitFor(() => expect(mocks.compare).toHaveBeenCalledTimes(2))
