@@ -628,7 +628,7 @@ export async function smartDetectDuplicates(
 // Step 1: Fetch thumbnails
 // ============================================================
 
-async function fetchThumbnails(
+export async function fetchThumbnails(
   items: GpdMediaItem[],
   cachedKeySet: Set<string>,
   onProgress?: ProgressCallback,
@@ -702,7 +702,7 @@ async function fetchThumbnails(
 
 const WORKER_BATCH_SIZE = 20;
 
-async function computeEmbeddings(
+export async function computeEmbeddings(
   blobs: (Blob | null)[],
   keys: string[],
   db: IDBDatabase | null,

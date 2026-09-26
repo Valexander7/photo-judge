@@ -1,8 +1,8 @@
 {
   "name": "google-photos-deduper",
-  "displayName": "Google Photos Deduper",
+  "displayName": "Photo Judge",
   "version": "2.2.3",
-  "description": "Find and remove duplicate photos from Google Photos",
+  "description": "Suggests Google Photos to delete that carry no real memory, using Chrome's on-device AI. Based on Google Photos Deduper.",
   "author": "Mack Talcott",
   "license": "AGPL-3.0-or-later",
   "scripts": {
